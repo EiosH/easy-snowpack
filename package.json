@@ -16,7 +16,7 @@
   "scripts": {
     "start": "ts-node ./src/index.ts"
   },
-  "bin": "easy-snowpack",
+  "bin": "lib/bin/index.js",
   "devDependencies": {
     "@types/koa-static": "^4.0.2",
     "@types/node": "^17.0.31"
