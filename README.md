@@ -1,5 +1,5 @@
 # easy-snowpack
-self made snowpack
+self made snowpack , support HMR
 
 ### how to use 
 ```js
