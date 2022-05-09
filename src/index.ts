@@ -1,15 +1,18 @@
-import { run } from "./dev";
 import path from "path";
 import { readFileSync, writeFileSync, watch } from "fs";
 import jscodeshift from "jscodeshift";
 import { load } from "cheerio";
 import esbuild from "esbuild";
 
+import { run, notifyReload } from "./dev";
 import { isLibrary, makeDir, deleteDir, copyDir } from "./utils";
 
 const projectPath = process.cwd();
 const workspacePath = path.join(projectPath, "../workspace");
+const indexPath = path.join(projectPath, "./index.html");
 const modulePath = "easy-snowpack";
+
+const memoLibrary: Record<string, boolean> = {};
 
 const getDependencies = () => {
   const projectPkgPath = path.join(projectPath, "./package.json");
@@ -29,17 +32,14 @@ const getDependencies = () => {
 
 const gatherIndex = () => {
   const jsPathList: string[] = [];
-  const indexPath = path.join(projectPath, "./index.html");
-
   const html = readFileSync(indexPath).toString();
-
   const $ = load(html);
 
   $("html")
     .find("script")
     .each((_, script) => {
       const { src, type } = script.attribs || {};
-      if (type === "module") {
+      if (src && type === "module") {
         jsPathList.push(src);
       }
     });
@@ -91,7 +91,13 @@ const generater = async () => {
       path.join(projectPath, `./node_modules/${dependency}/index.js`)
     ).toString();
 
+    if (memoLibrary[dependency]) {
+      return;
+    }
+
     const esmSource = await getEsm(source);
+
+    memoLibrary[dependency] = true;
 
     writeFileSync(
       path.join(workspacePath, `/${modulePath}/${dependency}.js`),
@@ -107,12 +113,37 @@ const ready = async () => {
     await makeDir(path.join(workspacePath, modulePath));
   };
 
+  const injectHmr = () => {
+    const html = readFileSync(indexPath).toString();
+
+    const $ = load(html);
+
+    $("head").append(`
+    <script>
+    const ws = new WebSocket("ws://localhost:443");
+  
+    ws.onopen = ()=>{
+      console.log("[ESM-HMR] listening for file changes...");
+    }
+    ws.onmessage = ()=>{
+      console.log("[ESM-HMR] message: reload");
+      location.reload();
+    }
+  
+    </script>
+    `);
+
+    writeFileSync(path.join(workspacePath, "./index.html"), $.html());
+  };
+
   await generateWorkspace();
 
   await copyDir(
     `\`ls ${projectPath} | grep -v node_modules | xargs\``,
     workspacePath
   );
+
+  injectHmr();
 };
 
 const analyze = async () => {
@@ -123,14 +154,15 @@ const analyze = async () => {
 const init = async () => {
   await ready();
   await analyze();
-  await run(projectPath, workspacePath);
+  await run(workspacePath);
 };
 
 const watcher = async () => {
   await init();
 
-  watch(projectPath, { recursive: true }, () => {
-    analyze();
+  watch(projectPath, { recursive: true }, async () => {
+    await analyze();
+    notifyReload();
   });
 };
 
