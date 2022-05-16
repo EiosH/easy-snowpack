@@ -54,8 +54,6 @@ const transform = async () => {
     const filePath = path.join(projectPath, indexPath);
     let value = readFileSync(filePath).toString();
 
-    let modified = false;
-
     value = jscodeshift(value)
       .find(jscodeshift.ImportDeclaration)
       .forEach((path) => {
@@ -64,14 +62,13 @@ const transform = async () => {
         if (isLibrary(name as string)) {
           const moduleName = `../${modulePath}/${name}.js`;
           path.value.source.value = moduleName;
-          modified = true;
+        } else {
+          path.value.source.value = `${name}.js`;
         }
       })
       .toSource();
 
-    if (modified) {
-      writeFileSync(path.join(workspacePath, indexPath), value);
-    }
+    writeFileSync(path.join(workspacePath, indexPath), value);
   });
 };
 
